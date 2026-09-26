@@ -2,9 +2,13 @@
   "name": "whatsapp-bot",
   "version": "1.0.0",
   "description": "Simple and customizable WhatsApp bot",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "latest",
