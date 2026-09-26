@@ -5,35 +5,46 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import pino from "pino";
 
-// ==============================
-// RENDER SERVER
-// ==============================
-
 const PORT = process.env.PORT || 3000;
+
 const PHONE_NUMBER = process.env.PHONE_NUMBER;
+const OWNER_NUMBER = process.env.OWNER_NUMBER;
 
-http.createServer((req, res) => {
-  res.writeHead(200);
-  res.end("WhatsApp Bot is running!");
-}).listen(PORT);
+const BOT_NAME = "ᴍʀ. ᴀғғᴇᴄᴛɪᴏɴ࿐❤️";
+const OWNER_NAME = "ᴍʀ. ᴀғғᴇᴄᴛɪᴏɴ࿐❤️";
+const TIKTOK = "www.tiktok.com/@mraffection07";
 
-// ==============================
-// BOT SETTINGS
-// ==============================
+const PREFIX = ".";
+
+// ===============================
+// SETTINGS
+// ===============================
 
 let antiLinkEnabled = false;
 let antiDeleteEnabled = false;
 let autoStatusEnabled = false;
 let autoReplyEnabled = false;
 
-// Messages kept temporarily for Anti-Delete
 const messageStore = new Map();
 
-// ==============================
-// OWNER CHECK
-// ==============================
+// ===============================
+// RENDER SERVER
+// ===============================
 
-function getPhoneFromJid(jid = "") {
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end(`${BOT_NAME} is running!`);
+}).listen(PORT);
+
+// ===============================
+// PHONE HELPERS
+// ===============================
+
+function cleanNumber(number = "") {
+  return number.replace(/\D/g, "");
+}
+
+function getSenderNumber(jid = "") {
   return jid
     .split("@")[0]
     .split(":")[0]
@@ -46,30 +57,34 @@ function isOwner(message) {
     message.key.remoteJid ||
     "";
 
-  const senderNumber = getPhoneFromJid(sender);
-  const ownerNumber = getPhoneFromJid(PHONE_NUMBER);
-
-  return senderNumber === ownerNumber;
+  return (
+    getSenderNumber(sender) ===
+    cleanNumber(OWNER_NUMBER)
+  );
 }
 
-// ==============================
-// ANTI-LINK
-// ==============================
+// ===============================
+// LINK DETECTOR
+// ===============================
 
 function containsLink(text = "") {
-  const linkPattern =
-    /(https?:\/\/|www\.|chat\.whatsapp\.com\/|t\.me\/|discord\.gg\/)/i;
-
-  return linkPattern.test(text);
+  return /(https?:\/\/|www\.|chat\.whatsapp\.com\/|t\.me\/|discord\.gg\/)/i.test(
+    text
+  );
 }
 
-// ==============================
+// ===============================
 // START BOT
-// ==============================
+// ===============================
 
 async function startBot() {
   if (!PHONE_NUMBER) {
     console.log("❌ PHONE_NUMBER pa configuré.");
+    return;
+  }
+
+  if (!OWNER_NUMBER) {
+    console.log("❌ OWNER_NUMBER pa configuré.");
     return;
   }
 
@@ -86,9 +101,9 @@ async function startBot() {
 
   let pairingRequested = false;
 
-  // ==============================
+  // ===============================
   // CONNECTION
-  // ==============================
+  // ===============================
 
   sock.ev.on("connection.update", async (update) => {
     const {
@@ -110,20 +125,27 @@ async function startBot() {
         );
 
         const code =
-          await sock.requestPairingCode(PHONE_NUMBER);
+          await sock.requestPairingCode(
+            PHONE_NUMBER
+          );
 
         console.log("================================");
         console.log("📱 WHATSAPP PAIRING CODE:");
         console.log(code);
         console.log("================================");
       } catch (error) {
-        console.error("❌ Pairing error:", error);
+        console.error(
+          "❌ Pairing error:",
+          error
+        );
+
         pairingRequested = false;
       }
     }
 
     if (connection === "open") {
       console.log("================================");
+      console.log(`✅ ${BOT_NAME}`);
       console.log("✅ WHATSAPP BOT CONNECTED!");
       console.log("================================");
     }
@@ -133,7 +155,8 @@ async function startBot() {
         lastDisconnect?.error?.output?.statusCode;
 
       if (
-        statusCode !== DisconnectReason.loggedOut
+        statusCode !==
+        DisconnectReason.loggedOut
       ) {
         console.log("🔄 Reconnecting...");
 
@@ -141,14 +164,16 @@ async function startBot() {
           startBot();
         }, 2000);
       } else {
-        console.log("❌ WhatsApp logged out.");
+        console.log(
+          "❌ WhatsApp logged out."
+        );
       }
     }
   });
 
-  // ==============================
+  // ===============================
   // MESSAGES
-  // ==============================
+  // ===============================
 
   sock.ev.on(
     "messages.upsert",
@@ -159,7 +184,6 @@ async function startBot() {
         return;
       }
 
-      // Ignore our own messages
       if (message.key.fromMe) {
         return;
       }
@@ -167,410 +191,77 @@ async function startBot() {
       const remoteJid =
         message.key.remoteJid || "";
 
-      // ============================
-      // AUTO STATUS
-      // ============================
-
-      if (
-        autoStatusEnabled &&
-        remoteJid === "status@broadcast"
-      ) {
-        try {
-          await sock.readMessages([
-            message.key
-          ]);
-
-          console.log(
-            "👀 Status viewed automatically."
-          );
-        } catch (error) {
-          console.log(
-            "❌ Status error:",
-            error.message
-          );
-        }
-
-        return;
-      }
-
-      // ============================
-      // ANTI DELETE
-      // ============================
-
-      if (antiDeleteEnabled) {
-        const messageId = message.key.id;
-
-        if (messageId) {
-          messageStore.set(
-            messageId,
-            message
-          );
-
-          // Keep memory under control
-          if (messageStore.size > 500) {
-            const firstKey =
-              messageStore.keys().next().value;
-
-            messageStore.delete(firstKey);
-          }
-        }
-      }
-
-      // ============================
-      // HANDLE DELETED MESSAGE
-      // ============================
-
-      const protocolMessage =
-        message.message.protocolMessage;
-
-      if (
-        antiDeleteEnabled &&
-        protocolMessage
-      ) {
-        const deletedId =
-          protocolMessage.key?.id;
-
-        if (deletedId) {
-          const original =
-            messageStore.get(deletedId);
-
-          const ownerJid =
-            `${PHONE_NUMBER}@s.whatsapp.net`;
-
-          if (original) {
-            const originalMessage =
-              original.message;
-
-            const deletedText =
-              originalMessage?.conversation ||
-              originalMessage
-                ?.extendedTextMessage?.text ||
-              "";
-
-            if (deletedText) {
-              await sock.sendMessage(
-                ownerJid,
-                {
-                  text:
-                    "🗑️ *ANTI-DELETE*\n\n" +
-                    `Mesaj efase:\n${deletedText}`
-                }
-              );
-            } else {
-              await sock.sendMessage(
-                ownerJid,
-                {
-                  text:
-                    "🗑️ *ANTI-DELETE*\n\n" +
-                    "Yon medya te efase."
-                }
-              );
-            }
-          } else {
-            await sock.sendMessage(
-              ownerJid,
-              {
-                text:
-                  "🗑️ *ANTI-DELETE*\n\n" +
-                  "Yon mesaj te efase, " +
-                  "men bot la pa t gen kopi li."
-              }
-            );
-          }
-
-          return;
-        }
-      }
-
-      // ============================
-      // GET TEXT
-      // ============================
-
       const text =
         message.message.conversation ||
         message.message.extendedTextMessage?.text ||
         "";
 
-      const command =
-        text.trim().toLowerCase();
+      const cleanText = text.trim();
 
       // ============================
-      // COMMAND: ANTILINK ON
-      // ============================
-
-      if (command === "antilink on") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        antiLinkEnabled = true;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "✅ *Anti-Link*\n\n" +
-              "Anti-Link aktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: ANTILINK OFF
-      // ============================
-
-      if (command === "antilink off") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        antiLinkEnabled = false;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "❌ *Anti-Link*\n\n" +
-              "Anti-Link dezaktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: ANTIDELETE ON
-      // ============================
-
-      if (command === "antidelete on") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        antiDeleteEnabled = true;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "✅ *Anti-Delete*\n\n" +
-              "Anti-Delete aktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: ANTIDELETE OFF
-      // ============================
-
-      if (command === "antidelete off") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        antiDeleteEnabled = false;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "❌ *Anti-Delete*\n\n" +
-              "Anti-Delete dezaktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: AUTOSTATUS ON
-      // ============================
-
-      if (command === "autostatus on") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        autoStatusEnabled = true;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "✅ *Auto-Status*\n\n" +
-              "Auto-Status aktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: AUTOSTATUS OFF
-      // ============================
-
-      if (command === "autostatus off") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        autoStatusEnabled = false;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "❌ *Auto-Status*\n\n" +
-              "Auto-Status dezaktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: AUTOREPLY ON
-      // ============================
-
-      if (command === "autoreply on") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        autoReplyEnabled = true;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "✅ *Auto-Reply*\n\n" +
-              "Auto-Reply aktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // COMMAND: AUTOREPLY OFF
-      // ============================
-
-      if (command === "autoreply off") {
-        if (!isOwner(message)) {
-          return;
-        }
-
-        autoReplyEnabled = false;
-
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "❌ *Auto-Reply*\n\n" +
-              "Auto-Reply dezaktive."
-          }
-        );
-
-        return;
-      }
-
-      // ============================
-      // ANTI-LINK ACTION
+      // SAVE FOR ANTIDELETE
       // ============================
 
       if (
-        antiLinkEnabled &&
-        remoteJid.endsWith("@g.us") &&
-        containsLink(text)
+        antiDeleteEnabled &&
+        message.key.id
       ) {
-        try {
-          await sock.sendMessage(
-            remoteJid,
-            {
-              delete: message.key
-            }
-          );
+        messageStore.set(
+          message.key.id,
+          message
+        );
 
-          await sock.sendMessage(
-            remoteJid,
-            {
-              text:
-                "🚫 *Anti-Link*\n\n" +
-                "Lyen yo pa otorize nan group sa."
-            }
-          );
-        } catch (error) {
-          console.log(
-            "❌ Anti-Link error:",
-            error.message
-          );
+        if (messageStore.size > 500) {
+          const firstKey =
+            messageStore.keys().next().value;
+
+          messageStore.delete(firstKey);
         }
+      }
 
+      // ============================
+      // COMMANDS ONLY WITH "."
+      // ============================
+
+      if (!cleanText.startsWith(PREFIX)) {
         return;
       }
 
-      // ============================
-      // AUTO REPLY
-      // ============================
+      const commandText =
+        cleanText.slice(PREFIX.length).trim();
 
-      if (autoReplyEnabled) {
-        const lowerText =
-          text.trim().toLowerCase();
+      const parts =
+        commandText.split(/\s+/);
 
-        if (
-          lowerText === "hi" ||
-          lowerText === "hello" ||
-          lowerText === "bonjou"
-        ) {
-          await sock.sendMessage(
-            remoteJid,
-            {
-              text:
-                "👋 Bonjou! 😊\n" +
-                "Mèsi paske ou kontakte nou."
-            }
-          );
+      const command =
+        parts[0]?.toLowerCase() || "";
 
-          return;
-        }
-
-        if (
-          lowerText === "help" ||
-          lowerText === "ede"
-        ) {
-          await sock.sendMessage(
-            remoteJid,
-            {
-              text:
-                "🤖 Mwen la pou ede w.\n\n" +
-                "Ekri /menu pou wè meni bot la."
-            }
-          );
-
-          return;
-        }
-      }
+      const action =
+        parts[1]?.toLowerCase() || "";
 
       // ============================
-      // MENU
+      // .MENU
       // ============================
 
-      if (command === "/menu") {
+      if (command === "menu") {
         await sock.sendMessage(
           remoteJid,
           {
             text:
-              "🤖 *WHATSAPP BOT MENU*\n\n" +
-              "1️⃣ antilink on/off\n" +
-              "2️⃣ antidelete on/off\n" +
-              "3️⃣ autostatus on/off\n" +
-              "4️⃣ autoreply on/off\n\n" +
-              "📊 /status\n" +
-              "🏓 /ping"
+              `🤖 *${BOT_NAME}*\n\n` +
+              `👑 Owner: ${OWNER_NAME}\n` +
+              `🎵 TikTok: ${TIKTOK}\n\n` +
+              "━━━━━━━━━━━━━━\n" +
+              "📌 *COMMANDS*\n" +
+              "━━━━━━━━━━━━━━\n\n" +
+              "🔗 .antilink on/off\n" +
+              "🗑️ .antidelete on/off\n" +
+              "👀 .autostatus on/off\n" +
+              "💬 .autoreply on/off\n\n" +
+              "📊 .status\n" +
+              "👑 .owner\n" +
+              "🎵 .tiktok\n" +
+              "🏓 .ping"
           }
         );
 
@@ -578,10 +269,61 @@ async function startBot() {
       }
 
       // ============================
-      // STATUS
+      // .PING
       // ============================
 
-      if (command === "/status") {
+      if (command === "ping") {
+        await sock.sendMessage(
+          remoteJid,
+          {
+            text:
+              `🏓 Pong!\n\n` +
+              `🤖 ${BOT_NAME}`
+          }
+        );
+
+        return;
+      }
+
+      // ============================
+      // .OWNER
+      // ============================
+
+      if (command === "owner") {
+        await sock.sendMessage(
+          remoteJid,
+          {
+            text:
+              `👑 *BOT OWNER*\n\n` +
+              `${OWNER_NAME}\n\n` +
+              `🤖 Bot: ${BOT_NAME}`
+          }
+        );
+
+        return;
+      }
+
+      // ============================
+      // .TIKTOK
+      // ============================
+
+      if (command === "tiktok") {
+        await sock.sendMessage(
+          remoteJid,
+          {
+            text:
+              `🎵 *TikTok*\n\n${TIKTOK}`
+          }
+        );
+
+        return;
+      }
+
+      // ============================
+      // .STATUS
+      // ============================
+
+      if (command === "status") {
         if (!isOwner(message)) {
           return;
         }
@@ -590,7 +332,7 @@ async function startBot() {
           remoteJid,
           {
             text:
-              "📊 *BOT STATUS*\n\n" +
+              `📊 *${BOT_NAME} STATUS*\n\n` +
               `🔗 Anti-Link: ${
                 antiLinkEnabled
                   ? "ON ✅"
@@ -618,19 +360,241 @@ async function startBot() {
       }
 
       // ============================
-      // PING
+      // .ANTILINK ON/OFF
       // ============================
 
-      if (command === "/ping") {
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text:
-              "🏓 Pong! Bot la ap mache."
-          }
-        );
+      if (command === "antilink") {
+        if (!isOwner(message)) {
+          return;
+        }
+
+        if (action === "on") {
+          antiLinkEnabled = true;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "✅ *Anti-Link*\n\n" +
+                "Anti-Link aktive."
+            }
+          );
+
+          return;
+        }
+
+        if (action === "off") {
+          antiLinkEnabled = false;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "❌ *Anti-Link*\n\n" +
+                "Anti-Link dezaktive."
+            }
+          );
+
+          return;
+        }
+      }
+
+      // ============================
+      // .ANTIDELETE ON/OFF
+      // ============================
+
+      if (command === "antidelete") {
+        if (!isOwner(message)) {
+          return;
+        }
+
+        if (action === "on") {
+          antiDeleteEnabled = true;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "✅ *Anti-Delete*\n\n" +
+                "Anti-Delete aktive."
+            }
+          );
+
+          return;
+        }
+
+        if (action === "off") {
+          antiDeleteEnabled = false;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "❌ *Anti-Delete*\n\n" +
+                "Anti-Delete dezaktive."
+            }
+          );
+
+          return;
+        }
+      }
+
+      // ============================
+      // .AUTOSTATUS ON/OFF
+      // ============================
+
+      if (command === "autostatus") {
+        if (!isOwner(message)) {
+          return;
+        }
+
+        if (action === "on") {
+          autoStatusEnabled = true;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "✅ *Auto-Status*\n\n" +
+                "Auto-Status aktive."
+            }
+          );
+
+          return;
+        }
+
+        if (action === "off") {
+          autoStatusEnabled = false;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "❌ *Auto-Status*\n\n" +
+                "Auto-Status dezaktive."
+            }
+          );
+
+          return;
+        }
+      }
+
+      // ============================
+      // .AUTOREPLY ON/OFF
+      // ============================
+
+      if (command === "autoreply") {
+        if (!isOwner(message)) {
+          return;
+        }
+
+        if (action === "on") {
+          autoReplyEnabled = true;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "✅ *Auto-Reply*\n\n" +
+                "Auto-Reply aktive."
+            }
+          );
+
+          return;
+        }
+
+        if (action === "off") {
+          autoReplyEnabled = false;
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "❌ *Auto-Reply*\n\n" +
+                "Auto-Reply dezaktive."
+            }
+          );
+
+          return;
+        }
+      }
+
+      // ============================
+      // ANTI-LINK ACTION
+      // ============================
+
+      if (
+        antiLinkEnabled &&
+        remoteJid.endsWith("@g.us") &&
+        containsLink(text)
+      ) {
+        try {
+          await sock.sendMessage(
+            remoteJid,
+            {
+              delete: message.key
+            }
+          );
+
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "🚫 *ANTI-LINK*\n\n" +
+                "Lyen yo pa otorize nan group sa."
+            }
+          );
+        } catch (error) {
+          console.log(
+            "❌ Anti-Link error:",
+            error.message
+          );
+        }
 
         return;
+      }
+
+      // ============================
+      // AUTO REPLY
+      // ============================
+
+      if (autoReplyEnabled) {
+        const lowerText =
+          cleanText.toLowerCase();
+
+        if (
+          lowerText === "hi" ||
+          lowerText === "hello" ||
+          lowerText === "bonjou"
+        ) {
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                `👋 Bonjou!\n\n` +
+                `🤖 ${BOT_NAME}\n` +
+                "Mèsi paske ou kontakte nou."
+            }
+          );
+
+          return;
+        }
+
+        if (
+          lowerText === "help" ||
+          lowerText === "ede"
+        ) {
+          await sock.sendMessage(
+            remoteJid,
+            {
+              text:
+                "🤖 Mwen la pou ede w.\n\n" +
+                "Ekri *.menu* pou wè meni an."
+            }
+          );
+
+          return;
+        }
       }
     }
   );
