@@ -8,7 +8,6 @@ import pino from "pino";
 const PORT = process.env.PORT || 3000;
 const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
-// Ti serveur pou Render
 http.createServer((req, res) => {
   res.writeHead(200);
   res.end("WhatsApp Bot is running!");
@@ -31,14 +30,21 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
+  let pairingRequested = false;
+
   sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
 
     if (
-      connection === "connecting" &&
-      !state.creds.registered
+      !state.creds.registered &&
+      !pairingRequested &&
+      (connection === "connecting" || qr)
     ) {
+      pairingRequested = true;
+
       try {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
         const code = await sock.requestPairingCode(
           PHONE_NUMBER
         );
@@ -49,11 +55,14 @@ async function startBot() {
         console.log("================================");
       } catch (error) {
         console.error("❌ Pairing error:", error);
+        pairingRequested = false;
       }
     }
 
     if (connection === "open") {
-      console.log("✅ WhatsApp Bot Connected!");
+      console.log("================================");
+      console.log("✅ WHATSAPP BOT CONNECTED!");
+      console.log("================================");
     }
 
     if (connection === "close") {
@@ -62,7 +71,7 @@ async function startBot() {
 
       if (statusCode !== DisconnectReason.loggedOut) {
         console.log("🔄 Reconnecting...");
-        startBot();
+        setTimeout(() => startBot(), 2000);
       } else {
         console.log("❌ WhatsApp logged out.");
       }
@@ -82,24 +91,18 @@ async function startBot() {
       "";
 
     if (text.toLowerCase() === "/ping") {
-      await sock.sendMessage(
-        message.key.remoteJid,
-        {
-          text: "🏓 Pong! Bot la ap mache."
-        }
-      );
+      await sock.sendMessage(message.key.remoteJid, {
+        text: "🏓 Pong! Bot la ap mache."
+      });
     }
 
     if (text.toLowerCase() === "/menu") {
-      await sock.sendMessage(
-        message.key.remoteJid,
-        {
-          text:
-            "🤖 *WHATSAPP BOT*\n\n" +
-            "📌 /ping - Test bot la\n" +
-            "📌 /menu - Montre meni an"
-        }
-      );
+      await sock.sendMessage(message.key.remoteJid, {
+        text:
+          "🤖 *WHATSAPP BOT*\n\n" +
+          "📌 /ping - Test bot la\n" +
+          "📌 /menu - Montre meni an"
+      });
     }
   });
 }
