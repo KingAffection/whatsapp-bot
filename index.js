@@ -1,31 +1,53 @@
-const {
-  default: makeWASocket,
+import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason
-} = require("@whiskeysockets/baileys");
+} from "@whiskeysockets/baileys";
 
-const pino = require("pino");
+import pino from "pino";
+
+const PHONE_NUMBER = process.env.PHONE_NUMBER;
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
+  if (!PHONE_NUMBER) {
+    console.log("❌ PHONE_NUMBER pa configuré.");
+    return;
+  }
+
+  const { state, saveCreds } =
+    await useMultiFileAuthState("./auth_info");
 
   const sock = makeWASocket({
     auth: state,
-    logger: pino({ level: "silent" })
+    logger: pino({ level: "silent" }),
+    printQRInTerminal: false
   });
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect } = update;
+
+    if (connection === "connecting" && !state.creds.registered) {
+      try {
+        const code = await sock.requestPairingCode(PHONE_NUMBER);
+        console.log("================================");
+        console.log("📱 WHATSAPP PAIRING CODE:");
+        console.log(code);
+        console.log("================================");
+      } catch (error) {
+        console.error("❌ Pairing error:", error);
+      }
+    }
+
     if (connection === "open") {
       console.log("✅ WhatsApp Bot Connected!");
     }
 
     if (connection === "close") {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode =
+        lastDisconnect?.error?.output?.statusCode;
 
-      if (shouldReconnect) {
+      if (statusCode !== DisconnectReason.loggedOut) {
         console.log("🔄 Reconnecting...");
         startBot();
       } else {
@@ -37,7 +59,7 @@ async function startBot() {
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const message = messages[0];
 
-    if (!message.message || message.key.fromMe) return;
+    if (!message?.message || message.key.fromMe) return;
 
     const text =
       message.message.conversation ||
@@ -47,6 +69,15 @@ async function startBot() {
     if (text.toLowerCase() === "/ping") {
       await sock.sendMessage(message.key.remoteJid, {
         text: "🏓 Pong! Bot la ap mache."
+      });
+    }
+
+    if (text.toLowerCase() === "/menu") {
+      await sock.sendMessage(message.key.remoteJid, {
+        text:
+          "🤖 *WHATSAPP BOT*\n\n" +
+          "📌 /ping - Test bot la\n" +
+          "📌 /menu - Montre meni an"
       });
     }
   });
