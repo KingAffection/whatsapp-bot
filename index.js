@@ -1,11 +1,18 @@
+import http from "http";
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason
 } from "@whiskeysockets/baileys";
-
 import pino from "pino";
 
+const PORT = process.env.PORT || 3000;
 const PHONE_NUMBER = process.env.PHONE_NUMBER;
+
+// Ti serveur pou Render
+http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end("WhatsApp Bot is running!");
+}).listen(PORT);
 
 async function startBot() {
   if (!PHONE_NUMBER) {
@@ -27,9 +34,15 @@ async function startBot() {
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
 
-    if (connection === "connecting" && !state.creds.registered) {
+    if (
+      connection === "connecting" &&
+      !state.creds.registered
+    ) {
       try {
-        const code = await sock.requestPairingCode(PHONE_NUMBER);
+        const code = await sock.requestPairingCode(
+          PHONE_NUMBER
+        );
+
         console.log("================================");
         console.log("📱 WHATSAPP PAIRING CODE:");
         console.log(code);
@@ -59,7 +72,9 @@ async function startBot() {
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const message = messages[0];
 
-    if (!message?.message || message.key.fromMe) return;
+    if (!message?.message || message.key.fromMe) {
+      return;
+    }
 
     const text =
       message.message.conversation ||
@@ -67,18 +82,24 @@ async function startBot() {
       "";
 
     if (text.toLowerCase() === "/ping") {
-      await sock.sendMessage(message.key.remoteJid, {
-        text: "🏓 Pong! Bot la ap mache."
-      });
+      await sock.sendMessage(
+        message.key.remoteJid,
+        {
+          text: "🏓 Pong! Bot la ap mache."
+        }
+      );
     }
 
     if (text.toLowerCase() === "/menu") {
-      await sock.sendMessage(message.key.remoteJid, {
-        text:
-          "🤖 *WHATSAPP BOT*\n\n" +
-          "📌 /ping - Test bot la\n" +
-          "📌 /menu - Montre meni an"
-      });
+      await sock.sendMessage(
+        message.key.remoteJid,
+        {
+          text:
+            "🤖 *WHATSAPP BOT*\n\n" +
+            "📌 /ping - Test bot la\n" +
+            "📌 /menu - Montre meni an"
+        }
+      );
     }
   });
 }
